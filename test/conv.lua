@@ -1,6 +1,13 @@
 require 'table'
 require 'fi'
 
+local ffi = require 'ffi'
+if ffi.os == 'Windows' then
+	for k, v in ipairs(arg) do
+		arg[k] = a2u(v)
+	end
+end
+
 num = table.getn(arg)
 if num == 0 then
 	convert('*.png', 'bmp')

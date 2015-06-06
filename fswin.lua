@@ -33,18 +33,18 @@ ffi.cdef[[
 local WIN32_FIND_DATA = ffi.typeof('struct WIN32_FIND_DATAW')
 local INVALID_HANDLE = ffi.cast('void*', -1)
 
-function u2w(str)
-	local size = ffi.C.MultiByteToWideChar(65001, 0, str, #str, nil, 0)
+function u2w(str, code)
+	local size = ffi.C.MultiByteToWideChar(code or 65001, 0, str, #str, nil, 0)
 	local buf = ffi.new("char[?]", size * 2 + 2)
-	ffi.C.MultiByteToWideChar(65001, 0, str, #str, buf, size * 2)
+	ffi.C.MultiByteToWideChar(code or 65001, 0, str, #str, buf, size * 2)
 	return buf
 end
 
-function w2u(wstr)
-	local size = ffi.C.WideCharToMultiByte(65001, 0, wstr, -1, nil, 0, nil, nil)
+function w2u(wstr, code)
+	local size = ffi.C.WideCharToMultiByte(code or 65001, 0, wstr, -1, nil, 0, nil, nil)
 	local buf = ffi.new("char[?]", size + 1)
-	size = ffi.C.WideCharToMultiByte(65001, 0, wstr, -1, buf, size, nil, nil)
-	return buf
+	size = ffi.C.WideCharToMultiByte(code or 65001, 0, wstr, -1, buf, size, nil, nil)
+	return ffi.string(buf)
 end
 
 function ls(pattern)
@@ -57,7 +57,7 @@ function ls(pattern)
 	if hFile ~= INVALID_HANDLE then
 	ffi.gc(hFile, ffi.C.FindClose)
 	repeat
-		fn = ffi.string(w2u(fd.cFileName))
+		fn = w2u(fd.cFileName)
 		if fn ~= '.' and fn ~= '..' then
 			table.insert(tFiles, fn)
 		end
@@ -77,4 +77,8 @@ end
 
 function mv(src, dst)
 	ffi.C.MoveFileW(u2w(src), u2w(dst))
+end
+
+function a2u(src, code)
+	return w2u(u2w(src, code or 0))
 end

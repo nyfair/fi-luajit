@@ -11,8 +11,7 @@ for k,v in ipairs(ls('*.bmp')) do
 	]]--
 	
 	save(o,out..stripext(v)..'.bmp')
-	free(o)
-	free(i)
+	free(o, i)
 	
 	--[[
 	free unused cache

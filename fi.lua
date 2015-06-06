@@ -111,7 +111,13 @@ function clone(img)
 end
 
 function free(img)
-	filua.FreeImage_Unload(img)
+	filua.FreeImage_Unload(v)
+end
+
+function freeAll(imgs)
+	for k, v in ipairs(imgs) do
+		free(v)
+	end
 end
 
 function color(r, g, b, a)
@@ -155,6 +161,100 @@ function setdpi(img, x, y)
 	filua.FreeImage_SetDotsPerMeterY(img, y/0.0254)
 end
 
+function greyalpha(back, front, channel)
+	local b
+	if getbpp(back) == 32 then
+		b = clone(back)
+	else
+		b = to32(back)
+	end
+	if getbpp(front) == 8 then
+		setchannel(b, front, 4)
+	else
+		local f = getchannel(front, channel or 2)
+		invert(f)
+		setchannel(b, f, 4)
+		free(f)
+	end
+	return b
+end
+
+function selfgreyalpha(img)
+	local l = copy(img, 0, 0, getw(img)/2, geth(img))
+	local r = copy(img, getw(img)/2, 0, getw(img), geth(img))
+	local b = greyalpha(l, r)
+	freeAll({l, r})
+	return b
+end
+
+function coloralpha(img, r, g, b)
+	local a
+	local bpp = getbpp(img)
+	if bpp == 32 or bpp == 8 then
+		a = clone(img)
+	else
+		a = to32(img)
+	end
+	bpp = getbpp(a)
+	if bpp == 32 then
+		swapcolor(a, color(r,g,b,0), color(r,g,b,255))
+	else
+		local c = filua.FreeImage_GetPalette(img)
+		for i = 0, 255 do
+			if c[i].r == r and c[i].g == g and c[i].b == b then
+				filua.FreeImage_SetTransparentIndex(a, i)
+				break
+			end
+		end
+	end
+	return a
+end
+
+-- Utilities
+function copy(img, left, top, right, bottom)
+	return filua.FreeImage_Copy(img, left, top, right, bottom)
+end
+
+function paste(back, front, left, top, alpha)
+	filua.FreeImage_Paste(back, front, left, top, alpha or 255)
+end
+
+function ref(img, left, top, right, bottom)
+	return filua.FreeImage_CreateView(img, left, top, right, bottom)
+end
+
+function composite(back, front)
+	return filua.FreeImage_Composite(front, 0, nil, back)
+end
+
+function to8(src)
+	return filua.FreeImage_ConvertToGreyscale(src)
+end
+
+function to24(src)
+	return filua.FreeImage_ConvertTo24Bits(src)
+end
+
+function to32(src)
+	return filua.FreeImage_ConvertTo32Bits(src)
+end
+
+function rotate(src, degree, rgba)
+	return filua.FreeImage_Rotate(src, degree, rgba or color())
+end
+
+function scale(src, width, height, filter)
+	return filua.FreeImage_Rescale(src, width, height, filter or 5)
+end
+
+function fliph(src)
+	filua.FreeImage_FlipHorizontal(src)
+end
+
+function flipv(src)
+	filua.FreeImage_FlipVertical(src)
+end
+
 function getpixel(img, x, y, rgba)
 	filua.FreeImage_GetPixelColor(img, x, y, rgba)
 end
@@ -179,93 +279,13 @@ function invert(img)
 	filua.FreeImage_Invert(img)
 end
 
-function greyalpha(back, front, channel)
-	local b
-	if getbpp(back) == 32 then
-		b = clone(back)
-	else
-		b = to32(back)
-	end
-	if getbpp(front) == 8 then
-		setchannel(b, front, 4)
-	else
-		local f = getchannel(front, channel or 2)
-		invert(f)
-		setchannel(b, f, 4)
-		free(f)
-	end
-	return b
-end
-
-function imggreyalpha(img)
-	local l = copy(img, 0, 0, getw(img)/2, geth(img))
-	local r = copy(img, getw(img)/2, 0, getw(img), geth(img))
-	local b = greyalpha(l, r)
-	free(l)
-	free(r)
-	return b
-end
-
-function coloralpha(img, r, g, b)
-	local a
-	local bpp = getbpp(img)
-	if bpp == 32 or bpp == 8 then
-		a = clone(img)
-	else
-		a = to32(img)
-	end
-	bpp = getbpp(a)
-	if bpp == 32 then
-		swapcolor(a, color(r,g,b,0), color(r,g,b,255))
-	else
-		local c = filua.FreeImage_GetPalette(img)
-		for i = 0, 255 do
-			if c[i].r == r and c[i].g == g and c[i].b == b then
-				filua.FreeImage_SetTransparentIndex(a, i)
-				break
-			end
-		end
-		
-	end
-	return a
-end
-
--- Composite
-function copy(img, left, top, right, bottom)
-	return filua.FreeImage_Copy(img, left, top, right, bottom)
-end
-
-function paste(back, front, left, top, alpha)
-	filua.FreeImage_Paste(back, front, left, top, alpha or 255)
-end
-
-function ref(img, left, top, right, bottom)
-	return filua.FreeImage_CreateView(img, left, top, right, bottom)
-end
-
--- alpha composite
-function composite(back, front)
-	return filua.FreeImage_Composite(front, 0, nil, back)
-end
-
-function to8(src)
-	return filua.FreeImage_ConvertToGreyscale(src)
-end
-
-function to24(src)
-	return filua.FreeImage_ConvertTo24Bits(src)
-end
-
-function to32(src)
-	return filua.FreeImage_ConvertTo32Bits(src)
-end
-
 -- File-based process function
 function convert(src, dst, flag)
 	if src:find('*') then
 		for k,v in ipairs(ls(src)) do
 			local img = open(v)
 			save(img, stripext(v)..'.'..dst, flag)
+			print(v)
 			free(img)
 		end
 	else
@@ -289,8 +309,8 @@ function convbpp(src, bpp, dst, flag)
 				else out = to8(img)
 				end
 				save(out, stripext(v)..'.'..dst, flag)
-				free(img)
-				free(out)
+				print(v)
+				freeAll({img, out})
 			end
 		else
 			if dst == nil then
@@ -303,8 +323,7 @@ function convbpp(src, bpp, dst, flag)
 			else out = to8(img)
 			end
 			save(out, dst, flag)
-			free(img)
-			free(out)
+			freeAll({img, out})
 		end
 	end
 end
@@ -314,60 +333,31 @@ function combine(back, front, dst, left, top, flag)
 	local img2 = open(front)
 	paste(img1, img2, left, top)
 	save(img1, dst, flag)
-	free(img1)
-	free(img2)
+	freeAll({img1, img2})
 end
 
 function combinealpha(back, front, dst, flag)
 	local img1 = open(back)
 	local img2 = open(front)
-	local img3 = composite(img2, img1)
+	local b
+	local f
+	local bpp = getbpp(img1)
+	if bpp == 32 or bpp == 8 then
+		b = img1
+	else
+		b = to32(img1)
+		free(img1)
+	end
+	bpp = getbpp(img2)
+	if bpp == 32 or bpp == 8 then
+		f = img2
+	else
+		f = to8(img2)
+		free(img2)
+	end
+	local img3 = composite(b, f)
 	save(img3, dst, flag)
-	free(img1)
-	free(img2)
-	free(img3)
-end
-
-function rotate(src, degree, dst, flag, rgba)
-	if dst == nil then
-		dst = stripext(src)..'_rotate.bmp'
-	end
-	local img = open(src)
-	local out = filua.FreeImage_Rotate(img, degree, rgba or color())
-	save(out, dst, flag)
-	free(img)
-	free(out)
-end
-
-function scale(src, width, height, filter, dst, flag)
-	if dst == nil then
-		dst = stripext(src)..'_thumb.bmp'
-	end
-	local img = open(src)
-	local out = filua.FreeImage_Rescale(img, width, height, filter or 5)
-	save(out, dst, flag)
-	free(img)
-	free(out)
-end
-
-function fliph(src, dst, flag)
-	if dst == nil then
-		dst = stripext(src)..'_fliph.bmp'
-	end
-	local img = open(src)
-	filua.FreeImage_FlipHorizontal(img)
-	save(img, dst, flag)
-	free(img)
-end
-
-function flipv(src, dst, flag)
-	if dst == nil then
-		dst = stripext(src)..'_flipv.bmp'
-	end
-	local img = open(src)
-	filua.FreeImage_FlipVertical(img)
-	save(img, dst, flag)
-	free(img)
+	freeAll({b, f, img3})
 end
 
 function jpgcrop(src, left, top, right, bottom, dst)
@@ -388,14 +378,12 @@ function splitw(src, num)
 	local img = open(src)
 	local width = getw(img) / num
 	local height = geth(img)
-	local bpp = getbpp(img)
 	for x = 1, num do
-		local imgx = newimg(width, height, bpp)
+		local imgx = newimg(width, height, getbpp(img))
 		local tmp = ref(img, width*(x-1), 0, width*x, height)
 		paste(imgx, tmp, 0, 0)
 		save(imgx, stripext(src)..'_'..tostring(x)..'.bmp')
-		free(tmp)
-		free(imgx)
+		freeAll({tmp, imgx})
 	end
 	free(img)
 end
@@ -404,14 +392,12 @@ function splith(src, num)
 	local img = open(src)
 	local width = getw(img)
 	local height = geth(img) / num
-	local bpp = getbpp(img)
 	for y = 1, num do
-		local imgy = newimg(width, height, bpp)
+		local imgy = newimg(width, height, getbpp(img))
 		local tmp = ref(img, 0, height*(y-1), width, height*y)
 		paste(imgy, tmp, 0, 0)
 		save(imgy, stripext(src)..'_'..tostring(y)..'.bmp')
-		free(tmp)
-		free(imgy)
+		freeAll({tmp, imgy})
 	end
 	free(img)
 end
@@ -425,9 +411,7 @@ function mergew(x1, x2)
 	paste(img, img1, 0, 0)
 	paste(img, img2, getw(img1) - offset or 0, 0)
 	save(img, stripext(x1)..'_'..stripext(x2)..'.bmp')
-	free(img)
-	free(img1)
-	free(img2)
+	freeAll({img, img1, img2})
 end
 
 function mergews(x1, x2, offset)
@@ -447,9 +431,7 @@ function mergeh(y1, y2, offset)
 	paste(img, img1, 0, 0)
 	paste(img, img2, 0, geth(img1) - offset or 0)
 	save(img, stripext(y1)..'_'..stripext(y2)..'.bmp')
-	free(img)
-	free(img1)
-	free(img2)
+	freeAll({img, img1, img2})
 end
 
 function mergehs(y1, y2, offset)

@@ -1,1 +1,1 @@
-"%~dp0lua" "%~dp0conv.lua" %*
+"%~dp0luajit" "%~dp0conv.lua" %*
