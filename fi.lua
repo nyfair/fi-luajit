@@ -38,7 +38,9 @@ ffi.cdef[[
 	int  FreeImage_FlipVertical(void*);
 	void*  FreeImage_Rescale(void*, int, int, int);
 	int  FreeImage_JPEGTransform(const char*, const char*, int, int);
+	int  FreeImage_JPEGTransformU(const char*, const char*, int, int);
 	int  FreeImage_JPEGCrop(const char *, const char*, int, int, int, int);
+	int  FreeImage_JPEGCropU(const char *, const char*, int, int, int, int);
 	
 	void*  FreeImage_Copy(void*, int, int, int, int);
 	int  FreeImage_Paste(void*, void*, int, int, int);
@@ -74,6 +76,20 @@ if ffi.os == 'Windows' then
 		local fmt = getfmt(name)
 		return filua.FreeImage_SaveU(fmt, img, u2w(name), flag or 0)
 	end
+
+	function jpgcrop(src, left, top, right, bottom, dst)
+		if dst == nil then
+			dst = stripext(src)..'_crop.jpg'
+		end
+		filua.FreeImage_JPEGCropU(u2w(src), u2w(dst), left, top, right, bottom)
+	end
+
+	function jpgtran(src, func, dst, perfect)
+		if dst == nil then
+			dst = stripext(src)..'_tran.jpg'
+		end
+		filua.FreeImage_JPEGTransformU(u2w(src), u2w(dst), func, perfect or 0)
+	end
 else
 	require 'fsposix'
 
@@ -94,6 +110,20 @@ else
 	function save(img, name, flag)
 		local fmt = getfmt(name)
 		return filua.FreeImage_Save(fmt, img, name, flag or 0)
+	end
+
+	function jpgcrop(src, left, top, right, bottom, dst)
+		if dst == nil then
+			dst = stripext(src)..'_crop.jpg'
+		end
+		filua.FreeImage_JPEGCrop(src, dst, left, top, right, bottom)
+	end
+
+	function jpgtran(src, func, dst, perfect)
+		if dst == nil then
+			dst = stripext(src)..'_tran.jpg'
+		end
+		filua.FreeImage_JPEGTransform(src, dst, func, perfect or 0)
 	end
 end
 
@@ -358,20 +388,6 @@ function combinealpha(back, front, dst, flag)
 	local img3 = composite(b, f)
 	save(img3, dst, flag)
 	freeAll({b, f, img3})
-end
-
-function jpgcrop(src, left, top, right, bottom, dst)
-	if dst == nil then
-		dst = stripext(src)..'_crop.jpg'
-	end
-	filua.FreeImage_JPEGCrop(src, dst, left, top, right, bottom)
-end
-
-function jpgtran(src, func, dst, perfect)
-	if dst == nil then
-		dst = stripext(src)..'_tran.jpg'
-	end
-	filua.FreeImage_JPEGTransform(src, dst, func, perfect or 0)
 end
 
 function splitw(src, num)
