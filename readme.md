@@ -12,10 +12,14 @@ In order to use this feature, make sure your lua script files are UTF-8 encoded.
 require 'fi'
 
 ---
+# convert image format
 convert('*.webp', 'tiff')
+# convert image format and bpp
 convbpp('*.png', 32, 'bmp')
+# convert image format with quality setting
 convert('1.png', '1.jpg', 90)
 
+# alpha composite with 24bpp background 8bpp foreground
 back = open('rgb24.bmp')
 front = open('alpha8.bmp')
 back_resized = scale(back, getw(front), geth(front))
@@ -35,10 +39,13 @@ CLI interface
 copy test\conv.lua to the same directory of luajit.exe
 chcp 65001
 # unix-like system
-alias conv="luajit test/conv.lua"
+alias conv="noglob luajit test/conv.lua"
 
+# convert image format
 conv *.png jpg
 conv 民逗Σ.dds 二マビ.webp
+# convert image format and bpp
 conv abc.jpg 32 abc.tiff
+# convert image format with quality setting
 conv 汉字.bmp 漢字.jpg 75 
 ```
