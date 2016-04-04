@@ -6,32 +6,34 @@ local filua = ffi.load('freeimage')
 ffi.cdef[[
 	typedef struct { uint8_t b, g, r, a; } RGBA;
 	
-	void*  FreeImage_Load(int, const char*, int);
-	void*  FreeImage_LoadU(int, const char*, int);
-	int  FreeImage_Save(int, void*, const char*, int);
-	int  FreeImage_SaveU(int, void*, const char*, int);
-	void*  FreeImage_Clone(void*);
-	void  FreeImage_Unload(void*);
-	void*  FreeImage_EnlargeCanvas(void*, int, int, int, int, RGBA*, int);
-	void*  FreeImage_Allocate(int, int, int, unsigned, unsigned, unsigned);
+	void* FreeImage_Load(int, const char*, int);
+	void* FreeImage_LoadU(int, const char*, int);
+	int FreeImage_Save(int, void*, const char*, int);
+	int FreeImage_SaveU(int, void*, const char*, int);
+	void* FreeImage_Clone(void*);
+	void FreeImage_Unload(void*);
+	void* FreeImage_EnlargeCanvas(void*, int, int, int, int, RGBA*, int);
+	void* FreeImage_Allocate(int, int, int, unsigned, unsigned, unsigned);
 	
-	unsigned  FreeImage_GetBPP(void*);
-	unsigned  FreeImage_GetWidth(void*);
-	unsigned  FreeImage_GetHeight(void*);
-	unsigned  FreeImage_GetDotsPerMeterX(void*);
-	unsigned  FreeImage_GetDotsPerMeterY(void*);
-	void  FreeImage_SetDotsPerMeterX(void*, unsigned);
-	void  FreeImage_SetDotsPerMeterY(void*, unsigned);
-	int  FreeImage_GetFIFFromFilename(const char*);
-	int  FreeImage_GetFIFFromFilenameU(const char*);
-	int  FreeImage_GetFileType(const char*, int);
-	int  FreeImage_GetFileTypeU(const char*, int);
-	RGBA*  FreeImage_GetPalette(void*);
-	void*  FreeImage_SetTransparentIndex(void*, int);
+	unsigned FreeImage_GetBPP(void*);
+	unsigned FreeImage_GetWidth(void*);
+	unsigned FreeImage_GetHeight(void*);
+	unsigned FreeImage_GetDotsPerMeterX(void*);
+	unsigned FreeImage_GetDotsPerMeterY(void*);
+	void FreeImage_SetDotsPerMeterX(void*, unsigned);
+	void FreeImage_SetDotsPerMeterY(void*, unsigned);
+	int FreeImage_GetFIFFromFilename(const char*);
+	int FreeImage_GetFIFFromFilenameU(const char*);
+	int FreeImage_GetFileType(const char*, int);
+	int FreeImage_GetFileTypeU(const char*, int);
+	RGBA* FreeImage_GetPalette(void*);
+	void* FreeImage_SetTransparentIndex(void*, int);
 	
-	void*  FreeImage_ConvertToGreyscale(void*);
-	void*  FreeImage_ConvertTo24Bits(void*);
-	void*  FreeImage_ConvertTo32Bits(void*);
+	void* FreeImage_ConvertToGreyscale(void*);
+	void* FreeImage_ConvertTo24Bits(void*);
+	void* FreeImage_ConvertTo32Bits(void*);
+	void* FreeImage_ConvertFromRawBitsEx(int, const char*, int, int, int, int, unsigned, unsigned, unsigned, unsigned, int);
+	void FreeImage_ConvertToRawBits(char*, void*, int, unsigned, unsigned, unsigned, unsigned, int);
 	
 	void*  FreeImage_Rotate(void*, double, RGBA*);
 	int  FreeImage_FlipHorizontal(void*);
@@ -307,6 +309,15 @@ end
 
 function invert(img)
 	filua.FreeImage_Invert(img)
+end
+
+function fromraw(buf, width, height, pitch, bpp, copy, fliph, rbit, gbit, bbit)
+	-- copy=0 will clone raw buf, rgb bit will only use in 16bpp image
+	return filua.FreeImage_ConvertFromRawBitsEx(1, buf, 1, width, height, pitch, bpp, rbit or 5, gbit or 6, bbit or 5, fliph or 1)
+end
+
+function toraw(buf, img, pitch, bpp, fliph, rbit, gbit, bbit)
+	filua.FreeImage_ConvertToRawBits(buf, img, pitch, bpp, rbit or 5, gbit or 6, bbit or 5, fliph or 1)
 end
 
 -- File-based process function
