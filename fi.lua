@@ -429,7 +429,7 @@ function splith(src, num)
 	free(img)
 end
 
-function mergew(x1, x2)
+function mergew(x1, x2, offset)
 	local img1 = open(x1)
 	local img2 = open(x2)
 	local height = geth(img1)
