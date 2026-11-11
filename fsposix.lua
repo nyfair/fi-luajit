@@ -11,10 +11,23 @@ function ls(pattern)
 	if pattern == nil then
 		pattern = './*'
 	end
-	local output = assert(io.popen('ls '..pattern:gsub(' ', '\\ ')))
-	for line in output:lines() do
-		table.insert(files, line)
+	-- Quote everything except * and ?: no command substitution, and no ls parsing.
+	local glob = {}
+	local pos = 1
+	while true do
+		local wildcard = pattern:find('[*?]', pos)
+		local part = wildcard and pattern:sub(pos, wildcard - 1) or pattern:sub(pos)
+		glob[#glob + 1] = "'"..part:gsub("'", "'\\''").."'"
+		if not wildcard then break end
+		glob[#glob + 1] = pattern:sub(wildcard, wildcard)
+		pos = wildcard + 1
 	end
+	local output = assert(io.popen('for file in '..table.concat(glob)..
+		'; do if [ -f "$file" ]; then printf "%s\\000" "$file"; fi; done', 'r'))
+	local data = output:read('*a')
+	output:close()
+	for file in data:gmatch('([^%z]+)%z') do files[#files + 1] = file end
+	table.sort(files)
 	return files
 end
 

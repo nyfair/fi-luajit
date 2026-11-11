@@ -3,13 +3,20 @@
 
 local ffi = require 'ffi'
 local filua = ffi.load('freeimage')
-ffi.cdef[[
-	typedef struct { uint8_t b, g, r, a; } RGBA;
+local bit = require 'bit'
+ffi.cdef(ffi.abi('le') and [[typedef struct { uint8_t b, g, r, a; } RGBA;]]
+	or [[typedef struct { uint8_t r, g, b, a; } RGBA;]])
+ffi.cdef((([[
+	enum {
+		FREEIMAGE_STRIP = (-2147483647 - 1),
+		PNG_Z_BEST_COMPRESSION = 9, WEBP_LOSSLESS = 0x100,
+		WEBP_SHARPYUV = 0x200, JXL_LOSSLESS = 0x100, HEIF_LOSSLESS = 0x100
+	};
 	
 	void* FreeImage_Load(int, const char*, int);
-	void* FreeImage_LoadU(int, const char*, int);
+	void* FreeImage_LoadU(int, const uint16_t*, int);
 	int FreeImage_Save(int, void*, const char*, int);
-	int FreeImage_SaveU(int, void*, const char*, int);
+	int FreeImage_SaveU(int, void*, const uint16_t*, int);
 	void* FreeImage_Clone(void*);
 	void FreeImage_Unload(void*);
 	void* FreeImage_EnlargeCanvas(void*, int, int, int, int, RGBA*, int);
@@ -23,119 +30,169 @@ ffi.cdef[[
 	void FreeImage_SetDotsPerMeterX(void*, unsigned);
 	void FreeImage_SetDotsPerMeterY(void*, unsigned);
 	int FreeImage_GetFIFFromFilename(const char*);
-	int FreeImage_GetFIFFromFilenameU(const char*);
+	int FreeImage_GetFIFFromFilenameU(const uint16_t*);
 	int FreeImage_GetFileType(const char*, int);
-	int FreeImage_GetFileTypeU(const char*, int);
+	int FreeImage_GetFileTypeU(const uint16_t*, int);
+	int FreeImage_FIFSupportsReading(int);
+	int FreeImage_FIFSupportsWriting(int);
 	RGBA* FreeImage_GetPalette(void*);
-	void* FreeImage_SetTransparentIndex(void*, int);
+	void FreeImage_SetTransparentIndex(void*, int);
 	
 	void* FreeImage_ConvertToGreyscale(void*);
 	void* FreeImage_ConvertTo24Bits(void*);
 	void* FreeImage_ConvertTo32Bits(void*);
-	void* FreeImage_ConvertFromRawBitsEx(int, const char*, int, int, int, int, unsigned, unsigned, unsigned, unsigned, int);
-	void FreeImage_ConvertToRawBits(char*, void*, int, unsigned, unsigned, unsigned, unsigned, int);
+	void* FreeImage_ConvertFromRawBitsEx(int, const uint8_t*, int, int, int, int, unsigned, unsigned, unsigned, unsigned, int);
+	void FreeImage_ConvertToRawBits(uint8_t*, void*, int, unsigned, unsigned, unsigned, unsigned, int);
 	
 	void*  FreeImage_Rotate(void*, double, RGBA*);
 	int  FreeImage_FlipHorizontal(void*);
 	int  FreeImage_FlipVertical(void*);
 	void*  FreeImage_Rescale(void*, int, int, int);
 	int  FreeImage_JPEGTransform(const char*, const char*, int, int);
-	int  FreeImage_JPEGTransformU(const char*, const char*, int, int);
+	int  FreeImage_JPEGTransformU(const uint16_t*, const uint16_t*, int, int);
 	int  FreeImage_JPEGCrop(const char *, const char*, int, int, int, int);
-	int  FreeImage_JPEGCropU(const char *, const char*, int, int, int, int);
+	int  FreeImage_JPEGCropU(const uint16_t*, const uint16_t*, int, int, int, int);
 	
 	void*  FreeImage_Copy(void*, int, int, int, int);
 	int  FreeImage_Paste(void*, void*, int, int, int);
-	void*  FreeImage_CreateView(void*, int, int, int, int);
+	void*  FreeImage_CreateView(void*, unsigned, unsigned, unsigned, unsigned);
 	void*  FreeImage_Composite(void*, int, RGBA*, void*);
 	int  FreeImage_GetPixelColor(void*, unsigned, unsigned, RGBA*);
 	int  FreeImage_SetPixelColor(void*, unsigned, unsigned, RGBA*);
 	void*  FreeImage_GetChannel(void*, int);
 	int  FreeImage_SetChannel(void*, void*, int);
-	int  FreeImage_SwapColors(void*, RGBA*, RGBA*, int);
+	unsigned FreeImage_SwapColors(void*, RGBA*, RGBA*, int);
 	int  FreeImage_Invert(void*);
-]]
+]]):gsub('(FreeImage_%w+)%(', function(name)
+	-- FreeImage DLLs use stdcall on 32-bit Windows (ignored on other targets).
+	return (ffi.os == 'Windows' and '__stdcall ' or '')..name..'('
+end)))
 
 -- helper
 if ffi.os == 'Windows' then
 	require 'fswin'
 
 	function getfmt(name)
-		local fmt = filua.FreeImage_GetFIFFromFilenameU(u2w(name))
+		local fmt = filua.FreeImage_GetFileTypeU(u2w(name), 0)
 		if fmt > -1 then
 			return fmt
 		else
-			return filua.FreeImage_GetFileTypeU(u2w(name), 0)
+			return filua.FreeImage_GetFIFFromFilenameU(u2w(name))
 		end
+	end
+
+	function getoutputfmt(name)
+		return filua.FreeImage_GetFIFFromFilenameU(u2w(name))
 	end
 
 	function open(name, flag)
 		local fmt = getfmt(name)
-		return filua.FreeImage_LoadU(fmt, u2w(name), flag or 0)
+		if fmt < 0 or filua.FreeImage_FIFSupportsReading(fmt) == 0 then
+			return nil, 'Unsupported input format: '..name
+		end
+		local img = filua.FreeImage_LoadU(fmt, u2w(name), flag or 0)
+		if img == nil then return nil, 'Cannot load: '..name end
+		return img
 	end
 
 	function save(img, name, flag)
-		local fmt = getfmt(name)
-		return filua.FreeImage_SaveU(fmt, img, u2w(name), flag or 0)
+		local fmt = getoutputfmt(name)
+		if img == nil or not cansave(fmt) then return 0, 'Cannot save: '..name end
+		local result = filua.FreeImage_SaveU(fmt, img, u2w(name), flag or 0)
+		if result == 0 then return 0, 'Cannot save: '..name end
+		return result
 	end
 
 	function jpgcrop(src, left, top, right, bottom, dst)
 		if dst == nil then
 			dst = stripext(src)..'_crop.jpg'
 		end
-		filua.FreeImage_JPEGCropU(u2w(src), u2w(dst), left, top, right, bottom)
+		return filua.FreeImage_JPEGCropU(u2w(src), u2w(dst), left, top, right, bottom)
 	end
 
 	function jpgtran(src, func, dst, perfect)
 		if dst == nil then
 			dst = stripext(src)..'_tran.jpg'
 		end
-		filua.FreeImage_JPEGTransformU(u2w(src), u2w(dst), func, perfect or 0)
+		return filua.FreeImage_JPEGTransformU(u2w(src), u2w(dst), func, perfect or 0)
 	end
 else
 	require 'fsposix'
 
 	function getfmt(name)
-		local fmt = filua.FreeImage_GetFIFFromFilename(name)
+		local fmt = filua.FreeImage_GetFileType(name, 0)
 		if fmt > -1 then
 			return fmt
 		else
-			return filua.FreeImage_GetFileType(name, 0)
+			return filua.FreeImage_GetFIFFromFilename(name)
 		end
+	end
+
+	function getoutputfmt(name)
+		return filua.FreeImage_GetFIFFromFilename(name)
 	end
 
 	function open(name, flag)
 		local fmt = getfmt(name)
-		return filua.FreeImage_Load(fmt, name, flag or 0)
+		if fmt < 0 or filua.FreeImage_FIFSupportsReading(fmt) == 0 then
+			return nil, 'Unsupported input format: '..name
+		end
+		local img = filua.FreeImage_Load(fmt, name, flag or 0)
+		if img == nil then return nil, 'Cannot load: '..name end
+		return img
 	end
 
 	function save(img, name, flag)
-		local fmt = getfmt(name)
-		return filua.FreeImage_Save(fmt, img, name, flag or 0)
+		local fmt = getoutputfmt(name)
+		if img == nil or not cansave(fmt) then return 0, 'Cannot save: '..name end
+		local result = filua.FreeImage_Save(fmt, img, name, flag or 0)
+		if result == 0 then return 0, 'Cannot save: '..name end
+		return result
 	end
 
 	function jpgcrop(src, left, top, right, bottom, dst)
 		if dst == nil then
 			dst = stripext(src)..'_crop.jpg'
 		end
-		filua.FreeImage_JPEGCrop(src, dst, left, top, right, bottom)
+		return filua.FreeImage_JPEGCrop(src, dst, left, top, right, bottom)
 	end
 
 	function jpgtran(src, func, dst, perfect)
 		if dst == nil then
 			dst = stripext(src)..'_tran.jpg'
 		end
-		filua.FreeImage_JPEGTransform(src, dst, func, perfect or 0)
+		return filua.FreeImage_JPEGTransform(src, dst, func, perfect or 0)
 	end
 end
 
-function stripext(fn)
-	local idx = fn:match('.+()%..+$')
-	if idx then
-		return fn:sub(1, idx - 1)
-	else
-		return fn
+function cansave(fmt)
+	return fmt >= 0 and filua.FreeImage_FIFSupportsWriting(fmt) ~= 0
+end
+
+-- Defaults for the size-oriented converter, not for the general save() API.
+local jpegfmt = getoutputfmt('image.jpg')
+local pngfmt = getoutputfmt('image.png')
+local webpfmt = getoutputfmt('image.webp')
+local jxlfmt = getoutputfmt('image.jxl')
+
+function saveflag(name, flag)
+	local fmt = getoutputfmt(name)
+	if flag == nil then
+		if fmt < 0 then flag = 0
+		elseif fmt == jpegfmt then flag = 90
+		elseif fmt == pngfmt then flag = ffi.C.PNG_Z_BEST_COMPRESSION
+		elseif fmt == webpfmt then flag = ffi.C.WEBP_LOSSLESS
+		elseif fmt == jxlfmt then flag = ffi.C.JXL_LOSSLESS
+		else flag = 0 end
+	elseif fmt >= 0 and fmt == webpfmt then
+		flag = bit.bor(flag, ffi.C.WEBP_SHARPYUV)
 	end
+	return bit.bor(flag, ffi.C.FREEIMAGE_STRIP)
+end
+
+function stripext(fn)
+	local path, name = fn:match('^(.-)([^/\\]*)$')
+	return path..(name:match('^(.+)%.[^.]*$') or name)
 end
 
 function clone(img)
@@ -143,7 +200,7 @@ function clone(img)
 end
 
 function free(img)
-	filua.FreeImage_Unload(v)
+	if img ~= nil then filua.FreeImage_Unload(img) end
 end
 
 function freeAll(imgs)
@@ -312,28 +369,39 @@ function invert(img)
 end
 
 function fromraw(buf, width, height, pitch, bpp, copy, fliph, rbit, gbit, bbit)
-	-- copy=0 will clone raw buf, rgb bit will only use in 16bpp image
-	return filua.FreeImage_ConvertFromRawBitsEx(1, buf, 1, width, height, pitch, bpp, rbit or 5, gbit or 6, bbit or 5, fliph or 1)
+	-- copy=1 copies the buffer; copy=0 borrows it (keep it alive until free()).
+	-- rbit/gbit/bbit are masks, not bit counts; fliph is FreeImage's topdown.
+	if copy == nil then copy = 1 end
+	return filua.FreeImage_ConvertFromRawBitsEx(copy, buf, 1, width, height, pitch, bpp,
+		rbit or (bpp == 16 and 0xF800 or 0xFF0000),
+		gbit or (bpp == 16 and 0x07E0 or 0x00FF00),
+		bbit or (bpp == 16 and 0x001F or 0x0000FF), fliph or 1)
 end
 
 function toraw(buf, img, pitch, bpp, fliph, rbit, gbit, bbit)
-	filua.FreeImage_ConvertToRawBits(buf, img, pitch, bpp, rbit or 5, gbit or 6, bbit or 5, fliph or 1)
+	filua.FreeImage_ConvertToRawBits(buf, img, pitch, bpp,
+		rbit or (bpp == 16 and 0xF800 or 0xFF0000),
+		gbit or (bpp == 16 and 0x07E0 or 0x00FF00),
+		bbit or (bpp == 16 and 0x001F or 0x0000FF), fliph or 1)
 end
 
 -- File-based process function
 function convert(src, dst, flag)
-	if src:find('*') then
+	if src:find('[*?]') then
 		for k,v in ipairs(ls(src)) do
-			local img = open(v)
-			save(img, stripext(v)..'.'..dst, flag)
+			local ok, err = convert(v, stripext(v)..'.'..dst, flag)
+			if not ok then return nil, err end
 			print(v)
-			free(img)
 		end
 	else
-		local img = open(src)
-		save(img, dst, flag)
+		local img, err = open(src)
+		if img == nil then return nil, err end
+		local ok, result, message = pcall(save, img, dst, flag)
 		free(img)
+		if not ok then return nil, result end
+		if result == 0 then return nil, message end
 	end
+	return true
 end
 
 function convbpp(src, bpp, dst, flag)
@@ -430,13 +498,14 @@ function splith(src, num)
 end
 
 function mergew(x1, x2, offset)
+	offset = offset or 0
 	local img1 = open(x1)
 	local img2 = open(x2)
 	local height = geth(img1)
-	local width = getw(img1) + getw(img2) - offset or 0
+	local width = getw(img1) + getw(img2) - offset
 	local img = newimg(width, height, getbpp(img1))
 	paste(img, img1, 0, 0)
-	paste(img, img2, getw(img1) - offset or 0, 0)
+	paste(img, img2, getw(img1) - offset, 0)
 	save(img, stripext(x1)..'_'..stripext(x2)..'.bmp')
 	freeAll({img, img1, img2})
 end
@@ -450,13 +519,14 @@ function mergews(x1, x2, offset)
 end
 
 function mergeh(y1, y2, offset)
+	offset = offset or 0
 	local img1 = open(y1)
 	local img2 = open(y2)
-	local height = geth(img1) + geth(img2) - offset or 0
+	local height = geth(img1) + geth(img2) - offset
 	local width = getw(img1)
 	local img = newimg(width, height, getbpp(img1))
 	paste(img, img1, 0, 0)
-	paste(img, img2, 0, geth(img1) - offset or 0)
+	paste(img, img2, 0, geth(img1) - offset)
 	save(img, stripext(y1)..'_'..stripext(y2)..'.bmp')
 	freeAll({img, img1, img2})
 end

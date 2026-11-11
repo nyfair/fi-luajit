@@ -1,10 +1,11 @@
 require 'fi'
 
-out='out/'
+local out = 'out/'
 md(out)
-for k,v in ipairs(ls('*.bmp')) do
+for _, v in ipairs(ls('*.bmp')) do
 	print(v)
-	i=open(v)
+	local i, err = open(v)
+	assert(i, err)
 	
 	--[[
 	do something
@@ -13,6 +14,7 @@ for k,v in ipairs(ls('*.bmp')) do
 	--[[
 	free unused cache
 	save(o,out..stripext(v)..'.bmp')
-	freeAll({o, i})
+	free(o)
 	]]--
+	free(i)
 end
